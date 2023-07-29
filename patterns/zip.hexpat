@@ -2,6 +2,60 @@
 
 #include <std/mem.pat>
 #include <std/math.pat>
+#include <std/io.pat>
+
+
+struct LocalFileHeader {
+    u32 headerSignature [[color("00000000")]];
+    u16 versionExtract [[comment("Minimum version needed to extract"), color("605741")]];
+    u16 generalFlag [[comment("General purpose bit flag"), color("00000000")]];
+    u16 compressionMethod;
+    u16 fileLastModifyTime [[comment("File last modification time")]];
+    u16 fileLastModifyDate [[comment("File last modification date")]];
+    u32 crc32 [[comment("CRC-32 of uncompressed data"), color("00000000")]];
+    u32 compressedSize;
+    u32 uncompressedSize;
+    u16 fileNameLength [[color("00000000")]];
+    u16 extraFieldLength [[color("605741")]];
+    char fileName[fileNameLength] [[color("20a060")]];
+    u8 extraField[extraFieldLength];
+};
+
+struct DataDescriptor {
+    u32 headerSignature [[comment("Data Descriptor header signature"), color("00000000")]];
+    u32 crc32 [[comment("CRC-32 of uncompressed data"), color("00000000")]];
+    u32 compressedSize;
+    u32 uncompressedSize;
+};
+struct FileData {
+    u8 fileBytes;
+    if (std::mem::read_unsigned($, 4, std::mem::Endian::Little) == 0x08074B50) {
+        break;
+    }
+};
+
+struct LocalFile {
+    LocalFileHeader fileHeader [[comment("Local file header")]];
+    u8 fileData[fileHeader.compressedSize] [[comment("Compressed file data"), color("afaf4f")]];
+    if (std::mem::read_unsigned($, 4, std::mem::Endian::Little) == 0x08074B50) {
+        DataDescriptor dataDescriptor;
+    }
+};
+
+fn count_files() {
+    u32 i = 0;
+    u32 cnt = 0;
+    while (std::mem::read_unsigned(i, 4, std::mem::Endian::Little) == 0x04034B50) {
+        i += 18;
+        u32 sz = std::mem::read_unsigned(i, 4);
+        i += 8;
+        i += std::mem::read_unsigned(i, 2);
+        i += 4;
+        i += sz;
+        cnt += 1;
+    }
+    return cnt;
+};
 
 struct EndOfCentralDirectory {
     u32 headerSignature [[color("00000000")]];
@@ -32,8 +86,6 @@ fn find_eocd() {
     }
 };
 
-EndOfCentralDirectory fileInfo @ find_eocd() [[name("End of Central Directory Record")]];
-
 struct CentralDirectoryFileHeader {
     u32 headerSignature [[color("00000000")]];
     u16 versionMade [[comment("Version file made by")]];
@@ -57,4 +109,6 @@ struct CentralDirectoryFileHeader {
     char comment[fileCommentLength];
 };
 
-CentralDirectoryFileHeader centralDirHeaders[fileInfo.CDRCount] @ (fileInfo.CDOffset) [[name("Files")]];
+LocalFile localFiles[count_files()] @ 0x00 [[name("Local File Entries")]];
+EndOfCentralDirectory fileInfo @ find_eocd() [[name("End of Central Directory Record")]];
+CentralDirectoryFileHeader centralDirHeaders[fileInfo.CDRCount] @ (fileInfo.CDOffset) [[name("Central Directory File Entries")]];
